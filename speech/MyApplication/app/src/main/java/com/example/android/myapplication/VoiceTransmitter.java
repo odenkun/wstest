@@ -1,5 +1,6 @@
 package com.example.android.myapplication;
 
+
 import android.util.Log;
 
 import java.io.IOException;
@@ -15,49 +16,43 @@ import okio.ByteString;
 
 class VoiceTransmitter extends WebSocketListener {
     private static final int NORMAL_CLOSURE_STATUS = 1000;
-    static final String TAG = "WSListener";
-    boolean open = false;
-    WebSocket ws;
+    private static final String TAG = "VoiceTransmitter";
+    private WebSocket ws;
     
     
-    public void run() {
+    void run () {
         Interceptor interceptor = new Interceptor() {
             @Override
             public Response intercept(Chain chain) throws IOException {
                 Request req = chain.request()
                                       .newBuilder()
-                                      .addHeader("Sec-WebSocket-Protocol", "echo-protocol")
+                                      .addHeader("Sec-WebSocket-Protocol", "recognize")
                                       .build();
                 return chain.proceed(req);
             }
         };
         
         OkHttpClient client = new OkHttpClient.Builder()
-                .addInterceptor(interceptor)
-                .readTimeout(0, TimeUnit.MILLISECONDS)
-                .build();
+                                      .addInterceptor(interceptor)
+                                      .readTimeout(0, TimeUnit.MILLISECONDS)
+                                      .build();
         
         Request request = new Request.Builder()
-                                  .url("ws://192.168.10.63")
+                                  .url("ws://192.168.10.24")
                                   .build();
-    
-        client.newWebSocket( request, this);
         
-        // Trigger shutdown of the dispatcher's executor so this process can exit cleanly.
+        ws = client.newWebSocket( request, this);
         client.dispatcher().executorService().shutdown();
+        
     }
     
-    public boolean send(byte[] data) {
-        
-        return ws != null && ws.send(ByteString.of(data));
-    }
+    
     
     
     @Override
     public void onOpen(WebSocket webSocket, Response response) {
         output("opened");
         ws = webSocket;
-        open = true;
     }
     
     @Override
@@ -70,12 +65,12 @@ class VoiceTransmitter extends WebSocketListener {
         output("Receiving bytes : " + bytes.hex());
     }
     
+    //こちらが閉じた時も閉じられたときも実行される
     @Override
     public void onClosing(WebSocket webSocket, int code, String reason) {
+        ws = null;
         webSocket.close(NORMAL_CLOSURE_STATUS, null);
         output("Closing : " + code + " / " + reason);
-        open = false;
-        ws = null;
     }
     
     @Override
@@ -87,7 +82,27 @@ class VoiceTransmitter extends WebSocketListener {
         Log.d(TAG, s);
     }
     
-    boolean isOpen() {
-        return open;
+    boolean send ( byte[] data ) {
+//        return isOpen () && ws.send(Base64.encodeToString(data,Base64.DEFAULT));
+        boolean result = isOpen () && ws.send(ByteString.of(data));
+        if (!result) {
+            Log.e(TAG, "could not queue audio data");
+        }
+        return result;
     }
+    boolean send ( String message ) {
+        return isOpen () && ws.send(message);
+    }
+    boolean stopRecognize() {
+        return this.send ( "stopRecognize" );
+    }
+    
+    private boolean isOpen () {
+        return ws!=null;
+    }
+    
+    boolean close () {
+        return isOpen () && ws.close ( 1000, null ) ;
+    }
+    
 }

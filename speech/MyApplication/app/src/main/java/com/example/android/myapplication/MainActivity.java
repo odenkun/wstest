@@ -3,170 +3,133 @@ package com.example.android.myapplication;
 import android.Manifest;
 import android.app.Activity;
 import android.bluetooth.BluetoothAdapter;
-import android.bluetooth.BluetoothDevice;
-import android.bluetooth.BluetoothHeadset;
+
 import android.bluetooth.BluetoothProfile;
 import android.content.pm.PackageManager;
-import android.media.AudioFormat;
-import android.media.AudioManager;
-import android.media.AudioTrack;
 import android.os.Bundle;
+import android.support.annotation.NonNull;
 import android.support.v4.app.ActivityCompat;
 import android.support.v4.content.ContextCompat;
 import android.util.Log;
 
-import java.net.Inet4Address;
-import java.net.InetAddress;
-import java.net.InterfaceAddress;
-import java.net.NetworkInterface;
-import java.net.SocketException;
-import java.util.Enumeration;
-import java.util.List;
+import java.util.ArrayList;
+import java.util.Arrays;
 
-
+enum MicMode {
+    BLUETOOTH,
+    BUILT_IN
+}
 
 public class MainActivity extends Activity
         implements ActivityCompat.OnRequestPermissionsResultCallback,
-                           VoiceRecorder.Callback {
+                           VoiceRecorder.Callback,
+                           BTListener.Callback{
     private static final String TAG = "MainActivity";
     
-    static final int REQUEST_CODE = 1;
+    private static final int REQUEST_CODE = 1;
     
-    BluetoothHeadset mBluetoothHeadset;
-    private AudioTrack mAudioTrack;
-    private VoiceRecorder mVoiceRecorder;
-  
-    private VoiceTransmitter transmitter;
-    
-    private BluetoothProfile.ServiceListener mProfileListener = new BluetoothProfile.ServiceListener() {
-        public void onServiceConnected(int profile, BluetoothProfile proxy) {
-            if (profile == BluetoothProfile.HEADSET) {
-                mBluetoothHeadset = (BluetoothHeadset) proxy;
-                List<BluetoothDevice> devices = mBluetoothHeadset.getConnectedDevices();
-                if(devices.size() > 0){
-                    mBluetoothHeadset.startVoiceRecognition(devices.get(0));
-                    audioTest();
-    
-                }
-            }
-        }
-        public void onServiceDisconnected(int profile) {
-        }
+    private static final String[] PERMISSIONS = {
+            Manifest.permission.BLUETOOTH,
+            Manifest.permission.RECORD_AUDIO
     };
     
-    
+    private VoiceRecorder mVoiceRecorder;
+    private VoiceTransmitter mTransmitter;
+    private MicMode mMicMode = MicMode.BUILT_IN;
+    private BTListener mBTListener ;
     
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
-        transmitter = new VoiceTransmitter();
-        
-        BluetoothAdapter bluetoothAdapter = BluetoothAdapter.getDefaultAdapter();
-        bluetoothAdapter.getProfileProxy(this, mProfileListener, BluetoothProfile.HEADSET);
     }
-    
     
     @Override
     protected void onResume() {
         super.onResume();
-        checkPermission(Manifest.permission.BLUETOOTH);
-        checkPermission(Manifest.permission.RECORD_AUDIO);
-    }
-    
-    void checkPermission(String permission) {
-        int permissionCheck = ContextCompat.checkSelfPermission(this, permission);
-        if (permissionCheck != PackageManager.PERMISSION_GRANTED) {
-            ActivityCompat.requestPermissions(this, new String[]{
-                    permission
-            }, REQUEST_CODE);
+        
+        String[] notGranted = getNotGrantedPermissions();
+        if (notGranted.length > 0) {
+            ActivityCompat.requestPermissions(this, notGranted, REQUEST_CODE);
+        } else {
+            mTransmitter = new VoiceTransmitter();
+            switch (mMicMode) {
+                case BUILT_IN:
+                    startVoiceRecord();
+                    break;
+                case BLUETOOTH:
+                    mBTListener = new BTListener(this, this);
+                    break;
+                default:
+                    Log.e(TAG, "MicMode is not assigned.");
+            }
         }
     }
+    
+    private String[] getNotGrantedPermissions() {
+        ArrayList<String> notGranted = new ArrayList<>();
+        for (String permission: PERMISSIONS) {
+            int permissionState = ContextCompat.checkSelfPermission(this, permission);
+            if (permissionState != PackageManager.PERMISSION_GRANTED) {
+                notGranted.add(permission);
+            }
+        }
+        return notGranted.toArray(new String[]{});
+    }
+    
     @Override
-    public void onRequestPermissionsResult(int requestCode, String[] permissions, int[] grantResults) {
+    public void onRequestPermissionsResult(int requestCode, @NonNull String[] permissions,@NonNull int[] grantResults) {
         switch (requestCode) {
             case REQUEST_CODE: {
                 if (grantResults.length > 0 && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
+                
                 } else {
                     // パーミッションが必要な処理
+                    
                 }
             }
         }
     }
     
-    void audioTest() {
-        Log.d(TAG,"audioTest started");
-        try {
-            mVoiceRecorder = new VoiceRecorder(this);
-            mVoiceRecorder.start();
-        } catch(Exception e) {
-            Log.e(TAG, "", e);
-        }
+    void startVoiceRecord() {
+        mVoiceRecorder = new VoiceRecorder(this);
+        mVoiceRecorder.start();
     }
     
     @Override
     public void onVoiceStart() {
-        int samplingRate = mVoiceRecorder.getSampleRate();
-        int bufSize = mVoiceRecorder.getBufferSize();
-        mAudioTrack = new AudioTrack(AudioManager.STREAM_VOICE_CALL,
-                                            samplingRate,
-                                            AudioFormat.CHANNEL_OUT_STEREO,
-                                            VoiceRecorder.ENCODING,
-                                            bufSize,
-                                            AudioTrack.MODE_STREAM );
-        mAudioTrack.play();
+        mTransmitter.run();
     }
     
     @Override
     public void onVoice(byte[] data, int size) {
-        
-        mAudioTrack.write(data, 0, size);
-        
+        mTransmitter.send(data);
     }
     
     @Override
     public void onVoiceEnd() {
-        mAudioTrack.stop();
-        mAudioTrack.flush();
+        mTransmitter.close();
     }
-    
-    void resetAudios () {
-        if (mVoiceRecorder != null) {
-            mVoiceRecorder.stop();
-            mVoiceRecorder = null;
-        }
-        List<BluetoothDevice> devices = mBluetoothHeadset.getConnectedDevices();
-        if(devices.size() > 0){
-            mBluetoothHeadset.stopVoiceRecognition(devices.get(0));
-        }
-    }
-    
     
     @Override
     protected void onPause() {
         super.onPause();
-        resetAudios();
-    }
-    
-    /** 最初に見つかったIPv4ローカルアドレスを返します。
-     *
-     * @return
-     * @throws SocketException
-     */
-    private static InetAddress getLocalAddress() throws SocketException {
-        Enumeration<NetworkInterface> netifs = NetworkInterface.getNetworkInterfaces();
-        while(netifs.hasMoreElements()) {
-            NetworkInterface netif = netifs.nextElement();
-            for(InterfaceAddress ifAddr : netif.getInterfaceAddresses()) {
-                InetAddress a = ifAddr.getAddress();
-                if(a != null && !a.isLoopbackAddress() && a instanceof Inet4Address) {
-                    return a;
-                }
-            }
+        if (mVoiceRecorder != null) {
+            mVoiceRecorder.stop();
+            mVoiceRecorder = null;
         }
-        return null;
+        if (mTransmitter != null) {
+            mTransmitter.close();
+            mTransmitter = null;
+        }
+        if (mBTListener != null) {
+            mBTListener.stop();
+            mBTListener = null;
+        }
     }
     
-   
-   
+    @Override
+    public void onBTConnected() {
+        startVoiceRecord();
+    }
 }
