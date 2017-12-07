@@ -2,18 +2,15 @@ package com.example.android.myapplication;
 
 import android.Manifest;
 import android.app.Activity;
-import android.bluetooth.BluetoothAdapter;
-
-import android.bluetooth.BluetoothProfile;
 import android.content.pm.PackageManager;
 import android.os.Bundle;
 import android.support.annotation.NonNull;
 import android.support.v4.app.ActivityCompat;
 import android.support.v4.content.ContextCompat;
 import android.util.Log;
+import com.example.android.myapplication.voice.VoiceRepository;
 
 import java.util.ArrayList;
-import java.util.Arrays;
 
 enum MicMode {
     BLUETOOTH,
@@ -21,9 +18,8 @@ enum MicMode {
 }
 
 public class MainActivity extends Activity
-        implements ActivityCompat.OnRequestPermissionsResultCallback,
-                           VoiceRecorder.Callback,
-                           BTListener.Callback{
+        implements ActivityCompat.OnRequestPermissionsResultCallback, BTListener.Callback{
+    
     private static final String TAG = "MainActivity";
     
     private static final int REQUEST_CODE = 1;
@@ -33,8 +29,7 @@ public class MainActivity extends Activity
             Manifest.permission.RECORD_AUDIO
     };
     
-    private VoiceRecorder mVoiceRecorder;
-    private VoiceTransmitter mTransmitter;
+    private VoiceRepository voiceRepo;
     private MicMode mMicMode = MicMode.BUILT_IN;
     private BTListener mBTListener ;
     
@@ -52,10 +47,9 @@ public class MainActivity extends Activity
         if (notGranted.length > 0) {
             ActivityCompat.requestPermissions(this, notGranted, REQUEST_CODE);
         } else {
-            mTransmitter = new VoiceTransmitter();
             switch (mMicMode) {
                 case BUILT_IN:
-                    startVoiceRecord();
+                    voiceRepo = new VoiceRepository();
                     break;
                 case BLUETOOTH:
                     mBTListener = new BTListener(this, this);
@@ -78,7 +72,8 @@ public class MainActivity extends Activity
     }
     
     @Override
-    public void onRequestPermissionsResult(int requestCode, @NonNull String[] permissions,@NonNull int[] grantResults) {
+    public void onRequestPermissionsResult(
+            int requestCode, @NonNull String[] permissions,@NonNull int[] grantResults) {
         switch (requestCode) {
             case REQUEST_CODE: {
                 if (grantResults.length > 0 && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
@@ -90,46 +85,20 @@ public class MainActivity extends Activity
             }
         }
     }
-    
-    void startVoiceRecord() {
-        mVoiceRecorder = new VoiceRecorder(this);
-        mVoiceRecorder.start();
-    }
-    
     @Override
-    public void onVoiceStart() {
-        mTransmitter.run();
-    }
+    public void onBTConnected() { voiceRepo = new VoiceRepository();}
     
-    @Override
-    public void onVoice(byte[] data, int size) {
-        mTransmitter.send(data);
-    }
     
-    @Override
-    public void onVoiceEnd() {
-        mTransmitter.close();
-    }
     
     @Override
     protected void onPause() {
         super.onPause();
-        if (mVoiceRecorder != null) {
-            mVoiceRecorder.stop();
-            mVoiceRecorder = null;
-        }
-        if (mTransmitter != null) {
-            mTransmitter.close();
-            mTransmitter = null;
+        if (voiceRepo != null) {
+            voiceRepo.stop();
         }
         if (mBTListener != null) {
             mBTListener.stop();
-            mBTListener = null;
         }
     }
     
-    @Override
-    public void onBTConnected() {
-        startVoiceRecord();
-    }
 }

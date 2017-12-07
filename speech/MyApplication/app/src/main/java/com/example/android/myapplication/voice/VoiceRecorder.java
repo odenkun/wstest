@@ -1,4 +1,4 @@
-package com.example.android.myapplication;
+package com.example.android.myapplication.voice;
 
 
 
@@ -39,7 +39,7 @@ public class VoiceRecorder {
     //喋る時間の最大の長さ
     private static final int MAX_SPEECH_LENGTH_MILLIS = 30 * 1000;
     
-    public interface Callback {
+    protected interface Callback {
         
         void onVoiceStart();
         
@@ -57,6 +57,7 @@ public class VoiceRecorder {
     //通知先
     private final Callback mCallback;
     
+    //録音を行う
     private AudioRecord mAudioRecord;
     
     //録音された音声データの処理を行うスレッド
@@ -64,7 +65,6 @@ public class VoiceRecorder {
     
     //音声のバッファ
     private short[] mBuffer;
-    private int bufferLen = 0;
     
     //同期実行で使用
     private final Object mLock = new Object();
@@ -83,8 +83,7 @@ public class VoiceRecorder {
      * 録音を始める
      * これを実行したらあとでstop()を実行しなければならない
      */
-    public void start() {
-//        convertLitEnd(new byte[]{(byte)10,(byte)3,0,(byte)23});
+    public int start() {
         //現在の録音を停止する
         stop();
         //新しく録音のセッションを生成する
@@ -97,6 +96,7 @@ public class VoiceRecorder {
         //録音されたデータを処理するスレッドの生成
         mThread = new Thread(new ProcessVoice());
         mThread.start();
+        return mBuffer.length;
     }
     
     public void stop() {
@@ -127,14 +127,6 @@ public class VoiceRecorder {
         }
         return 0;
     }
-    public int getBufferSize() {
-        if (mBuffer != null) {
-            return mBuffer.length;
-        }
-        return 0;
-    }
-    
-    
     
     /**
      * 新しくAudioRecordを生成する
@@ -157,7 +149,6 @@ public class VoiceRecorder {
             if (audioRecord.getState() == AudioRecord.STATE_INITIALIZED) {
                 //バッファ初期化
                 mBuffer = new short[CAPTURE_CACHE_SIZE];
-                bufferLen = CAPTURE_CACHE_SIZE;
                 Log.d(TAG,"initialized:" + String.valueOf(sampleRate));
                 return audioRecord;
             } else {

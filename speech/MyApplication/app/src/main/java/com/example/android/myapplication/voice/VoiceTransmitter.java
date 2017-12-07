@@ -1,4 +1,4 @@
-package com.example.android.myapplication;
+package com.example.android.myapplication.voice;
 
 
 import android.util.Log;
@@ -14,55 +14,69 @@ import okhttp3.WebSocket;
 import okhttp3.WebSocketListener;
 import okio.ByteString;
 
+enum Header {
+    RECOGNIZE("recognize");
+    private final String name;
+    Header(final String name) {
+        this.name = name;
+    }
+    public String getName() {
+        return this.name;
+    }
+}
+
 class VoiceTransmitter extends WebSocketListener {
-    private static final int NORMAL_CLOSURE_STATUS = 1000;
     private static final String TAG = "VoiceTransmitter";
+    private static String SUB_PROTOCOL_HEADER = "Sec-WebSocket-Protocol";
+    private static final int NORMAL_CLOSURE_STATUS = 1000;
     private WebSocket ws;
+    private int sampleRate;
     
     
-    void run () {
+    public VoiceTransmitter(int sampleRate) {
+        this.sampleRate = sampleRate;
         Interceptor interceptor = new Interceptor() {
             @Override
             public Response intercept(Chain chain) throws IOException {
                 Request req = chain.request()
                                       .newBuilder()
-                                      .addHeader("Sec-WebSocket-Protocol", "recognize")
+                                      .addHeader(SUB_PROTOCOL_HEADER, Header.RECOGNIZE.getName())
                                       .build();
                 return chain.proceed(req);
             }
         };
-        
+    
         OkHttpClient client = new OkHttpClient.Builder()
                                       .addInterceptor(interceptor)
+                                      //タイムアウト
                                       .readTimeout(0, TimeUnit.MILLISECONDS)
                                       .build();
-        
+    
         Request request = new Request.Builder()
                                   .url("ws://192.168.10.24")
                                   .build();
         
         ws = client.newWebSocket( request, this);
-        client.dispatcher().executorService().shutdown();
-        
+
+//        client.dispatcher()
+//                .executorService()
+//                .shutdown();
     }
-    
-    
-    
     
     @Override
     public void onOpen(WebSocket webSocket, Response response) {
-        output("opened");
+        emitLog("opened");
         ws = webSocket;
     }
     
     @Override
     public void onMessage(WebSocket webSocket, String text) {
-        output("Receiving : " + text);
+        emitLog("Receiving : " + text);
     }
     
     @Override
     public void onMessage(WebSocket webSocket, ByteString bytes) {
-        output("Receiving bytes : " + bytes.hex());
+        emitLog("Receiving bytes : " + bytes.hex());
     }
     
     //こちらが閉じた時も閉じられたときも実行される
@@ -70,15 +84,15 @@ class VoiceTransmitter extends WebSocketListener {
     public void onClosing(WebSocket webSocket, int code, String reason) {
         ws = null;
         webSocket.close(NORMAL_CLOSURE_STATUS, null);
-        output("Closing : " + code + " / " + reason);
+        emitLog("Closing : " + code + " / " + reason);
     }
     
     @Override
     public void onFailure(WebSocket webSocket, Throwable t, Response response) {
-        output("Error : " + t.getMessage());
+        emitLog("Error : " + t.getMessage());
     }
     
-    void output(String s) {
+    private void emitLog(String s) {
         Log.d(TAG, s);
     }
     
@@ -90,9 +104,10 @@ class VoiceTransmitter extends WebSocketListener {
         }
         return result;
     }
-    boolean send ( String message ) {
+    boolean send (final String message ) {
         return isOpen () && ws.send(message);
     }
+    
     boolean stopRecognize() {
         return this.send ( "stopRecognize" );
     }
@@ -102,7 +117,7 @@ class VoiceTransmitter extends WebSocketListener {
     }
     
     boolean close () {
-        return isOpen () && ws.close ( 1000, null ) ;
+        //wsはonClosingでnullになるので問題ない
+        return isOpen() && ws.close ( 1000, null ) ;
     }
-    
 }
